@@ -369,10 +369,20 @@ bool CWin2DinMFCView::LoadSvg(ICanvasResourceCreator &rc)
 
 	//we except UTF-8
 	// first convert to wstring
-	std::wstring w = UTF8_to_wchar(pDoc->m_svg_xml.c_str());
+	std::wstring w;
+	if (pDoc->m_svg_xml[0] == -1 && pDoc->m_svg_xml[1] == -2)
+	{
+		//vector data is unicode
+		w = std::wstring(((wchar_t*)&pDoc->m_svg_xml[0]) + 1, pDoc->m_svg_xml.size() / 2 - 1);
+	}
+	else
+	{
+		w = UTF8_to_wchar(&pDoc->m_svg_xml[0]);
+		w = ReplaceString(w, L"encoding=\"utf-8", L"encoding=\"utf-16");
+		w = ReplaceString(w, L"encoding=\"UTF-8", L"encoding=\"UTF-16");
+	}
 
-	w = ReplaceString(w, L"utf-8", L"utf-16");
-	w = ReplaceString(w, L"UTF-8", L"UTF-16");
+	
 
 	m_w = winrt::hstring(w);
 

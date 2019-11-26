@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <string>
+#include <vector>
 
 class CWin2DinMFCDoc : public CDocument
 {
@@ -15,7 +15,7 @@ protected: // create from serialization only
 
 	// Attributes
 public:
-	std::string m_svg_xml;
+	std::vector<char> m_svg_xml;
 
 // Operations
 public:

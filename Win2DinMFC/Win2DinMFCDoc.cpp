@@ -65,10 +65,10 @@ void CWin2DinMFCDoc::Serialize(CArchive& ar)
 		{
 			auto len = file->GetLength();
 
-			m_svg_xml.resize(len);
-			if (ar.Read(&m_svg_xml[0], len) == len)
+			m_svg_xml.resize(len + 2, 0);
+			if (ar.Read(&m_svg_xml[0], len) != len)
 			{
-
+				ar.Abort();
 			}
 		}
 	}
