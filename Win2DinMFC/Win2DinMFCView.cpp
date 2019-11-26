@@ -213,7 +213,6 @@ CWin2DinMFCDoc* CWin2DinMFCView::GetDocument() const // non-debug version is inl
 
 // CWin2DinMFCView message handlers
 
-
 DesktopWindowTarget CWin2DinMFCView::CreateDesktopWindowTarget(Compositor const& compositor, HWND window)
 {
 	namespace abi = ABI::Windows::UI::Composition::Desktop;
@@ -232,7 +231,6 @@ void CWin2DinMFCView::PrepareVisuals(Compositor const& compositor)
 	m_root.RelativeSizeAdjustment({ 1.05f, 1.05f });
 	m_root.Brush(compositor.CreateColorBrush({ 0xFF, 0xFF, 0xFF , 0xFF }));
 	m_target.Root(m_root);
-
 }
 
 
@@ -240,8 +238,6 @@ int CWin2DinMFCView::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
 	if (CView::OnCreate(lpCreateStruct) == -1)
 		return -1;
-
-	// TODO:  Add your specialized creation code here
 
 	PrepareVisuals(m_compositor);
 
@@ -278,16 +274,16 @@ void CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 			new_bitmap = true;
 		}
 		auto drawingSession = m_myBitmap.CreateDrawingSession();
+
 		auto w = Colors::Black();
 		w.A = new_bitmap ?  255 : 20;
-		//drawingSession.Clear(w);
 		Rect r{ 0, 0, width, height };
 		drawingSession.FillRectangle(r, w);
+
 		float2 c(cx + wx, cy + wy);
 		auto m = make_float3x2_rotation(m_angle * M_PI / 180.0, c);
 		auto md = m * drawingSession.Transform();
 		drawingSession.Transform(md);
-
 
 		Rect r1{ cx, cy, wx, wy };
 		Rect r2{ cx + wx, cy + wy, wx, wy };
@@ -301,22 +297,17 @@ void CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 		winrt::hstring t{ L"Hello Win2D in MFC!" };
 
 		Rect rt{ cx, cy, wx * 4, wy * 4 };
-		//drawingSession.DrawText(t, rt, Colors::Blue(), tf);
-
 		CanvasRenderTarget my_text(rc, wx * 4, wy * 4, dpi);
 		auto ds = my_text.CreateDrawingSession();
 		auto b = Colors::Black();
 		b.A = 0;
 		ds.Clear(b);
-
 		ds.DrawText(t, rt, Colors::Blue(), tf);
 		ds.Close();
 
 		GaussianBlurEffect gbe;
 		gbe.BlurAmount(5);
 		gbe.Source(my_text);
-
-
 		drawingSession.DrawImage(gbe);
 
 		// If the text or font size has changed then recreate the text command list.
@@ -330,14 +321,9 @@ void CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 		ConfigureEffect();
 		float2 center(width / 2.0f, height / 2.0f);
 		drawingSession.DrawImage(m_composite, center);
-
-
 		drawingSession.Close();
 
 		drawingSession0.DrawImage(m_myBitmap);
-
-
-
 		drawingSession0.Close();
 
 		if (m_angle == 360.0f)
@@ -348,17 +334,14 @@ void CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 		auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
 		auto rc = drawingSession0.as< ICanvasResourceCreator>();
 
-
 		if (m_svg == nullptr&& pDoc->m_svg_xml.size() > 0)
 		{
 			LoadSvg(rc);
 		}
-
 		winrt::Windows::Foundation::Size size(m_width, m_height);
 		drawingSession0.Clear(Colors::White());
 		drawingSession0.DrawSvg(m_svg, size);
 		drawingSession0.Close();
-
 	}
 }
 
@@ -381,21 +364,8 @@ bool CWin2DinMFCView::LoadSvg(ICanvasResourceCreator &rc)
 		w = ReplaceString(w, L"encoding=\"utf-8", L"encoding=\"utf-16");
 		w = ReplaceString(w, L"encoding=\"UTF-8", L"encoding=\"UTF-16");
 	}
-
-	
-
 	m_w = winrt::hstring(w);
-
-
-
-	//winrt::hstring fromWideString{ pDoc->m_svg_xml.c_str() };
-	//m_w = fromWideString;
 	m_svg =  CanvasSvgDocument::LoadFromXml(rc, m_w);
-	//m_svg = CanvasSvgDocument(rc);
-
-	//winrt::hstring w = L"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"200\"><rect x=\"50\" y=\"50\" width=\"200\" height=\"100\" style=\"fill:red\"/></svg>";
-	//auto elem = m_svg.LoadElementFromXml(w);
-	//m_svg.Root(elem);
 	return true;
 }
 
@@ -453,7 +423,6 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 
 	if (m_svg == nullptr)
 	{
-
 		m_cbt.start(1000.0 / 60.0, [this, dpi]
 			{
 				Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, dpi);
@@ -487,11 +456,8 @@ void CWin2DinMFCView::OnInitialUpdate()
 			m_svg.Close();
 			m_svg = nullptr;
 		}
-
 		Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, m_currentDpi);
 	}
-
-	// TODO: Add your specialized code here and/or call the base class
 }
 
 
@@ -558,16 +524,8 @@ void CWin2DinMFCView::CreateFlameEffect()
 	
 	// Composite the text over the flames.
 	m_composite = CompositeEffect();
-	Windows::Foundation::Collections::IVector<Windows::Graphics::Effects::IGraphicsEffectSource> sources;
 	m_composite.Sources().Append(m_flamePosition);
 	m_composite.Sources().Append(nullptr);
-
-#if 0
-	{
-		Sources = { flamePosition, null }
-		// Replace null with the text command list when it is created.
-	};
-#endif
 }
 
 void CWin2DinMFCView::SetupText(ICanvasResourceCreator resourceCreator)
@@ -596,13 +554,11 @@ void CWin2DinMFCView::SetupText(ICanvasResourceCreator resourceCreator)
 void CWin2DinMFCView::ConfigureEffect()
 {
 	// Animate the flame by shifting the Perlin noise upwards (-Y) over time.
-
 	m_flameAnimation.TransformMatrix(make_float3x2_translation(0, -((float)60.0f * ::clock() / CLOCKS_PER_SEC)));
 
 	// Scale the flame effect 2x vertically, aligned so it starts above the text.
 	float verticalOffset = m_fontSize * 1.4f;
 
 	auto centerPoint = float2(0, verticalOffset);
-
 	m_flamePosition.TransformMatrix(make_float3x2_scale(1, 2, centerPoint));
 }
