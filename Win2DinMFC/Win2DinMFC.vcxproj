@@ -186,6 +186,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="desktopcompositionwindow.h" />
+    <ClInclude Include="devicelost.h" />
     <ClInclude Include="MainFrm.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="stdafx.h" />
@@ -196,6 +197,7 @@
     <ClInclude Include="Win2DinMFCView.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="devicelost.cpp" />
     <ClCompile Include="HookingActivation.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>

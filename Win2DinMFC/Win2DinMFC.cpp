@@ -78,7 +78,7 @@ auto CreateDispatcherQueueController()
 		DQTAT_COM_STA
 	};
 
-	Windows::System::DispatcherQueueController controller{ nullptr };
+	winrt::Windows::System::DispatcherQueueController controller{ nullptr };
 	check_hresult(CreateDispatcherQueueController(options, reinterpret_cast<abi::IDispatcherQueueController**>(put_abi(controller))));
 	return controller;
 }

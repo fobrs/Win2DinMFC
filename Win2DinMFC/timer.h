@@ -21,11 +21,12 @@ public:
 	void stop()
 	{
 		_execute.store(false, std::memory_order_release);
+
 		if (_thd.joinable())
 			_thd.join();
 	}
 
-	void start(double interval, std::function<void(void)> func)
+	void start(double interval, std::function<bool(void)> func)
 	{
 		if (_execute.load(std::memory_order_acquire)) {
 			stop();
@@ -34,7 +35,11 @@ public:
 		_thd = std::thread([this, interval, func]()
 		{
 			while (_execute.load(std::memory_order_acquire)) {
-				func();
+				if (!func())
+				{
+					_execute.store(false, std::memory_order_release);
+					break;
+				}
 				std::this_thread::sleep_for(
 					std::chrono::nanoseconds((int)(interval * 1000000.0)));
 			}

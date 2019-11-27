@@ -12,18 +12,17 @@
 #include "winrt/Microsoft.Graphics.Canvas.UI.Composition.h"
 
 using namespace winrt;
-using namespace winrt;
-using namespace Windows::UI;
-using namespace Windows::UI::Composition;
-using namespace Windows::UI::Composition::Desktop;
+using namespace winrt::Windows::UI;
+using namespace winrt::Windows::UI::Composition;
+using namespace winrt::Windows::UI::Composition::Desktop;
 
+using namespace winrt::Microsoft::Graphics::Canvas;
+using namespace winrt::Microsoft::Graphics::Canvas::Effects;
+using namespace winrt::Microsoft::Graphics::Canvas::Svg;
+using namespace winrt::Microsoft::Graphics::Canvas::UI::Composition;
+using namespace winrt::Windows::Foundation;
 
-using namespace Microsoft::Graphics::Canvas;
-using namespace Microsoft::Graphics::Canvas::Effects;
-using namespace Microsoft::Graphics::Canvas::Svg;
-using namespace Microsoft::Graphics::Canvas::UI::Composition;
-using namespace Windows::Foundation;
-
+#include "devicelost.h"
 
 class CWin2DinMFCView : public CView
 {
@@ -56,10 +55,11 @@ public:
 #endif
 
 protected:
+	void OnDirect3DDeviceLost(DeviceLostHelper const* /* sender */, DeviceLostEventArgs const& /* args */);
 	DesktopWindowTarget CWin2DinMFCView::CreateDesktopWindowTarget(Compositor const& compositor, HWND window);
 	void CWin2DinMFCView::PrepareVisuals(Compositor const& compositor);
 
-	void Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi);
+	bool Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi);
 	void Scenario_Wind2d(const Compositor & compositor, const ContainerVisual & root, UINT dpi, int cx, int cy);
 	bool LoadSvg(ICanvasResourceCreator &rc);
 
@@ -73,7 +73,11 @@ protected:
 
 	float m_angle = 0.0f;
 
-	Windows::UI::Composition::CompositionDrawingSurface m_drawingSurface{ nullptr };
+	CanvasDevice m_canvasDevice{ nullptr };
+	DeviceLostHelper m_devicelost_helper;
+	bool m_b_in_device_lost = false;
+	CompositionGraphicsDevice m_graphicsDevice{ nullptr };
+	winrt::Windows::UI::Composition::CompositionDrawingSurface m_drawingSurface{ nullptr };
 	CanvasRenderTarget m_myBitmap{ nullptr };
 
 	CallBackTimer m_cbt;

@@ -11,30 +11,27 @@
 #ifdef GetCurrentTime
 #undef GetCurrentTime
 #endif
-#include <unknwn.h>
+#include <memory>
+#include <d3d11.h>
+#include <D3d11_4.h>
+#include "d2d1.h"
+#include <d2d1_1.h>
+#include <d2d1_3.h>
+#include <d2d1helper.h>
+
+
 #include <windows.ui.composition.interop.h>
 #include <ShellScalingAPI.h>
 #include <DispatcherQueue.h>
+#include <Windows.Graphics.Interop.h>
+
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Composition.Desktop.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.Metadata.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Numerics.h>
-#include "winrt/Microsoft.UI.Xaml.Automation.Peers.h"
-#include "winrt/Microsoft.UI.Xaml.Controls.Primitives.h"
-#include "winrt/Microsoft.UI.Xaml.Media.h"
-#include "winrt/Microsoft.UI.Xaml.XamlTypeInfo.h"
-
-
 #include <winrt/Windows.Graphics.h>
-
-#include <memory>
-#include "d2d1.h"
-#include <d2d1_1.h>
-#include <d2d1helper.h>
-
-#include <Windows.Graphics.Interop.h>
 
 #include "Win2DinMFCDoc.h"
 #include "Win2DinMFCView.h"
@@ -42,16 +39,14 @@
 
 
 using namespace winrt;
-using namespace Windows::Foundation::Numerics;
+using namespace winrt::Windows::Foundation::Numerics;
+using namespace winrt::Microsoft::Graphics::Canvas::Effects;
+using namespace winrt::Microsoft::Graphics::Canvas::Svg;
+using namespace winrt::Microsoft::Graphics::Canvas::Text;
 
 
-using namespace Microsoft::Graphics::Canvas::Effects;
-using namespace Microsoft::Graphics::Canvas::Svg;
-using namespace Microsoft::Graphics::Canvas::Text;
 
 # define M_PI           3.14159265358979323846  /* pi */
-
-
 
 
 #ifdef _DEBUG
@@ -258,91 +253,100 @@ static float GetFontSize(float width)
 }
 
 
-void CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi)
+bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi)
 {
 	auto pDoc = GetDocument();
-	if (!pDoc || pDoc->m_svg_xml.size() == 0)
-	{
-		auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
-		auto rc = drawingSession0.as< ICanvasResourceCreator>();
 
-		bool new_bitmap = false;
-		if (m_myBitmap == nullptr)
+	try {
+
+		if (!pDoc || pDoc->m_svg_xml.size() == 0)
 		{
-			CanvasRenderTarget my_bitmap(rc, width, height, dpi);
-			m_myBitmap = my_bitmap;
-			new_bitmap = true;
+			auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
+			auto rc = drawingSession0.as< ICanvasResourceCreator>();
+
+			bool new_bitmap = false;
+			if (m_myBitmap == nullptr)
+			{
+				CanvasRenderTarget my_bitmap(rc, width, height, dpi);
+				m_myBitmap = my_bitmap;
+				new_bitmap = true;
+			}
+			auto drawingSession = m_myBitmap.CreateDrawingSession();
+
+			auto w = Colors::Black();
+			w.A = new_bitmap ? 255 : 20;
+			Rect r{ 0, 0, width, height };
+			drawingSession.FillRectangle(r, w);
+
+			float2 c(cx + wx, cy + wy);
+			auto m = make_float3x2_rotation(m_angle * M_PI / 180.0, c);
+			auto md = m * drawingSession.Transform();
+			drawingSession.Transform(md);
+
+			Rect r1{ cx, cy, wx, wy };
+			Rect r2{ cx + wx, cy + wy, wx, wy };
+			winrt::Windows::UI::Color col1 = Colors::Red();
+
+			drawingSession.FillRectangle(r1, col1);
+			drawingSession.FillRectangle(r2, Colors::Green());
+
+			winrt::Microsoft::Graphics::Canvas::Text::CanvasTextFormat tf;
+			tf.FontSize(m_angle / 2 + 1);
+			winrt::hstring t{ L"Hello Win2D in MFC!" };
+
+			Rect rt{ cx, cy, wx * 4, wy * 4 };
+			CanvasRenderTarget my_text(rc, wx * 4, wy * 4, dpi);
+			auto ds = my_text.CreateDrawingSession();
+			auto b = Colors::Black();
+			b.A = 0;
+			ds.Clear(b);
+			ds.DrawText(t, rt, Colors::Blue(), tf);
+			ds.Close();
+
+			GaussianBlurEffect gbe;
+			gbe.BlurAmount(5);
+			gbe.Source(my_text);
+			drawingSession.DrawImage(gbe);
+
+			// If the text or font size has changed then recreate the text command list.
+			auto newFontSize = GetFontSize(width);
+			if (m_newText != m_text || newFontSize != m_fontSize)
+			{
+				m_text = m_newText;
+				m_fontSize = newFontSize;
+				SetupText(rc);
+			};
+			ConfigureEffect();
+			float2 center(width / 2.0f, height / 2.0f);
+			drawingSession.DrawImage(m_composite, center);
+			drawingSession.Close();
+
+			drawingSession0.DrawImage(m_myBitmap);
+			drawingSession0.Close();
+
+			if (m_angle == 360.0f)
+				m_angle = 0.0f;
 		}
-		auto drawingSession = m_myBitmap.CreateDrawingSession();
-
-		auto w = Colors::Black();
-		w.A = new_bitmap ?  255 : 20;
-		Rect r{ 0, 0, width, height };
-		drawingSession.FillRectangle(r, w);
-
-		float2 c(cx + wx, cy + wy);
-		auto m = make_float3x2_rotation(m_angle * M_PI / 180.0, c);
-		auto md = m * drawingSession.Transform();
-		drawingSession.Transform(md);
-
-		Rect r1{ cx, cy, wx, wy };
-		Rect r2{ cx + wx, cy + wy, wx, wy };
-		Windows::UI::Color col1 = Colors::Red();
-
-		drawingSession.FillRectangle(r1, col1);
-		drawingSession.FillRectangle(r2, Colors::Green());
-
-		Microsoft::Graphics::Canvas::Text::CanvasTextFormat tf;
-		tf.FontSize(m_angle / 2 + 1);
-		winrt::hstring t{ L"Hello Win2D in MFC!" };
-
-		Rect rt{ cx, cy, wx * 4, wy * 4 };
-		CanvasRenderTarget my_text(rc, wx * 4, wy * 4, dpi);
-		auto ds = my_text.CreateDrawingSession();
-		auto b = Colors::Black();
-		b.A = 0;
-		ds.Clear(b);
-		ds.DrawText(t, rt, Colors::Blue(), tf);
-		ds.Close();
-
-		GaussianBlurEffect gbe;
-		gbe.BlurAmount(5);
-		gbe.Source(my_text);
-		drawingSession.DrawImage(gbe);
-
-		// If the text or font size has changed then recreate the text command list.
-		auto newFontSize = GetFontSize(width);
-		if (m_newText != m_text || newFontSize != m_fontSize)
+		else if (pDoc)
 		{
-			m_text = m_newText;
-			m_fontSize = newFontSize;
-			SetupText(rc);
-		};
-		ConfigureEffect();
-		float2 center(width / 2.0f, height / 2.0f);
-		drawingSession.DrawImage(m_composite, center);
-		drawingSession.Close();
+			auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
+			auto rc = drawingSession0.as< ICanvasResourceCreator>();
 
-		drawingSession0.DrawImage(m_myBitmap);
-		drawingSession0.Close();
-
-		if (m_angle == 360.0f)
-			m_angle = 0.0f;
-	}
-	else if (pDoc)
-	{
-		auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
-		auto rc = drawingSession0.as< ICanvasResourceCreator>();
-
-		if (m_svg == nullptr&& pDoc->m_svg_xml.size() > 0)
-		{
-			LoadSvg(rc);
+			if (m_svg == nullptr&& pDoc->m_svg_xml.size() > 0)
+			{
+				LoadSvg(rc);
+			}
+			winrt::Windows::Foundation::Size size(m_width, m_height);
+			drawingSession0.Clear(Colors::White());
+			drawingSession0.DrawSvg(m_svg, size);
+			drawingSession0.Close();
 		}
-		winrt::Windows::Foundation::Size size(m_width, m_height);
-		drawingSession0.Clear(Colors::White());
-		drawingSession0.DrawSvg(m_svg, size);
-		drawingSession0.Close();
 	}
+	catch (winrt::hresult_error const& ex)
+	{
+		return false;
+	}
+	return true;
 }
 
 
@@ -370,53 +374,121 @@ bool CWin2DinMFCView::LoadSvg(ICanvasResourceCreator &rc)
 }
 
 
+winrt::com_ptr<::IDXGIDevice> GetDXGIDevice(CanvasDevice & device)
+{
+	//First we need to get an ID2D1Device1 pointer from the shared CanvasDevice
+	com_ptr<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative> nativeDeviceWrapper = device.as<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative>();
+	com_ptr<ID2D1Device2> pDevice{ nullptr };
+	check_hresult(nativeDeviceWrapper->GetNativeResource(nullptr, 0.0f, guid_of<ID2D1Device2>(), pDevice.put_void()));
+
+	IDXGIDevice * pDXGIDevice;
+	pDevice->GetDxgiDevice(&pDXGIDevice);
+
+	winrt::com_ptr<::IDXGIDevice> dxgiDevice;
+	dxgiDevice.attach(pDXGIDevice);
+	return dxgiDevice;
+}
+
+void CWin2DinMFCView::OnDirect3DDeviceLost(DeviceLostHelper const* /* sender */, DeviceLostEventArgs const& /* args */)
+{
+	m_b_in_device_lost = true;
+	m_cbt.stop();
+	auto canvasDevice = CanvasDevice::GetSharedDevice();
+	winrt::com_ptr<abi::ICompositionGraphicsDeviceInterop> compositionGraphicsDeviceInterop{ m_graphicsDevice.as<abi::ICompositionGraphicsDeviceInterop>() };
+
+	com_ptr<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative> nativeDeviceWrapper = canvasDevice.as<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative>();
+	com_ptr<ID2D1Device2> pDevice{ nullptr };
+	check_hresult(nativeDeviceWrapper->GetNativeResource(nullptr, 0.0f, guid_of<ID2D1Device2>(), pDevice.put_void()));
+
+	winrt::check_hresult(compositionGraphicsDeviceInterop->SetRenderingDevice(pDevice.get()));
+
+	m_drawingSurface.Close();
+	m_drawingSurface = nullptr ;
+	m_myBitmap.Close();
+	m_myBitmap = nullptr ;
+	if (m_svg != nullptr)
+	{
+		m_svg.Close();
+		m_svg = nullptr;
+	}
+
+	m_b_in_device_lost = false;
+
+	CreateFlameEffect();
+	m_text = "";
+
+	Scenario_Wind2d(m_compositor, m_root, m_currentDpi, m_width, m_height);
+
+}
+
+
+
+
 void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const ContainerVisual & root, UINT dpi, int cx, int cy)
 {
+	if (m_b_in_device_lost)
+		return;
 	// Configure a container visual.
-	if (m_width != cx || m_height != cy)
+	if (m_width != cx || m_height != cy || m_drawingSurface ==nullptr)
 	{
 		m_cbt.stop();
 		m_width = cx, m_height = cy;
-		SpriteVisual container = compositor.CreateSpriteVisual();
-		container.Size({ m_width, m_height });
+		try {
+			SpriteVisual container = compositor.CreateSpriteVisual();
+			container.Size({ m_width, m_height });
 
-		//container.Offset({ 0.0f, 900.0f, 1.0f });
+			//container.Offset({ 0.0f, 900.0f, 1.0f });
 
-		if (m_drawingSurface != nullptr)
-		{
-			Windows::Graphics::SizeInt32 s{ m_width, m_height };
-			m_drawingSurface.Resize(s);
-			// Create a drawing surface brush.
-			CompositionSurfaceBrush brush = compositor.CreateSurfaceBrush(m_drawingSurface);
-			container.Brush(brush);
+			if (m_drawingSurface != nullptr)
+			{
+				winrt::Windows::Graphics::SizeInt32 s{ m_width, m_height };
+				m_drawingSurface.Resize(s);
+				// Create a drawing surface brush.
+				CompositionSurfaceBrush brush = compositor.CreateSurfaceBrush(m_drawingSurface);
+				container.Brush(brush);
+
+			}
+
+			if (m_drawingSurface == nullptr)
+			{
+				// Get a canvas device.
+				m_canvasDevice = CanvasDevice::GetSharedDevice();
+
+				// Create the Direct2D device object.
+						// Obtain the underlying DXGI device of the Direct3D device.
+
+				auto dxgi_device = ::GetDXGIDevice(m_canvasDevice);
+				m_devicelost_helper.WatchDevice(dxgi_device);
+				m_devicelost_helper.DeviceLost({ this, &CWin2DinMFCView::OnDirect3DDeviceLost });
+
+				if (m_graphicsDevice == nullptr)
+					m_graphicsDevice = CanvasComposition::CreateCompositionGraphicsDevice(compositor, m_canvasDevice);
+
+				// Create a drawing surface.
+				m_drawingSurface = m_graphicsDevice.CreateDrawingSurface(
+					Size(m_width, m_height),
+					winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
+					winrt::Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied);
+
+				// Create a drawing surface brush.
+				CompositionSurfaceBrush brush = compositor.CreateSurfaceBrush(m_drawingSurface);
+				container.Brush(brush);
+			}
 
 			if (m_myBitmap != nullptr)
 				m_myBitmap.Close();
 			m_myBitmap = nullptr;
-		}
 
-		if (m_drawingSurface == nullptr)
+			auto c = root.Children();
+			if (c.Count() > 0)
+				c.RemoveAll();
+			c.InsertAtTop(container);
+
+		}
+		catch (winrt::hresult_error const& ex)
 		{
-			// Get a canvas device.
-			auto m_canvasDevice = CanvasDevice::GetSharedDevice();
-
-			auto m_graphicsDevice = CanvasComposition::CreateCompositionGraphicsDevice(compositor, m_canvasDevice);
-
-			// Create a drawing surface.
-			m_drawingSurface = m_graphicsDevice.CreateDrawingSurface(
-				Size(m_width, m_height),
-				Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
-				Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied);
-
-			// Create a drawing surface brush.
-			CompositionSurfaceBrush brush = compositor.CreateSurfaceBrush(m_drawingSurface);
-			container.Brush(brush);
+			m_cbt.stop();
 		}
-		auto c = root.Children();
-		if (c.Count() > 0)
-			c.RemoveAll();
-		c.InsertAtTop(container);
-
 	}
 
 	Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, dpi);
@@ -425,8 +497,10 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 	{
 		m_cbt.start(1000.0 / 60.0, [this, dpi]
 			{
-				Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, dpi);
+				if (Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, dpi) == false)
+					return false;
 				m_angle += 1.0f;
+				return true;
 			});
 	}
 }
@@ -497,8 +571,8 @@ void CWin2DinMFCView::CreateFlameEffect()
 	// Animate the noise by modifying flameAnimation's transform matrix at render time.
 
 	TurbulenceEffect te;
-	te.Frequency(Windows::Foundation::Numerics::float2(0.109f, 0.109f));
-	te.Size(Windows::Foundation::Numerics::float2(500.0f, 80.0f));
+	te.Frequency(winrt::Windows::Foundation::Numerics::float2(0.109f, 0.109f));
+	te.Size(winrt::Windows::Foundation::Numerics::float2(500.0f, 80.0f));
 
 	BorderEffect be;
 	be.Source(te);
