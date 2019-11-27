@@ -101,4 +101,7 @@
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
+  <ItemGroup>
+    <Page Include="$(MSBuildThisFileDirectory)DensityStyles\Compact.xaml" />
+  </ItemGroup>
 </Project>
