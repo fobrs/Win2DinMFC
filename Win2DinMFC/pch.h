@@ -51,6 +51,10 @@
 #endif
 #endif
 
+#ifdef GetCurrentTime
+#undef GetCurrentTime
+#endif
+
 #include <Microsoft.Graphics.Canvas.h>
 #include <Microsoft.Graphics.Canvas.native.h> //This is for interop
 

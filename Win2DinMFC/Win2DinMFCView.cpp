@@ -8,9 +8,6 @@
 #include "Win2DinMFC.h"
 #endif
 
-#ifdef GetCurrentTime
-#undef GetCurrentTime
-#endif
 #include <memory>
 #include <d3d11.h>
 #include <D3d11_4.h>
