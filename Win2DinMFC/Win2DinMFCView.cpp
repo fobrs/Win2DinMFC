@@ -54,6 +54,10 @@ using namespace winrt::Microsoft::Graphics::Canvas::Text;
 #endif
 
 
+#define SCALEPPI(X) ( X * m_currentDpi / 96)
+#define PPI(X) (X)
+
+#define ppm_bitmap_MAX_resolution 8000
 
 ddraw_data_t g_ddraw_data;
 bool g_m_layoutdiagram_damp_scrolling = true;
@@ -130,6 +134,7 @@ BEGIN_MESSAGE_MAP(CWin2DinMFCView, CMyScrollView)
 	ON_WM_LBUTTONUP()
 	ON_WM_MOUSEMOVE()
 	ON_WM_ERASEBKGND()
+	ON_MESSAGE(WM_GESTURE, OnGesture)
 
 END_MESSAGE_MAP()
 
@@ -137,6 +142,7 @@ END_MESSAGE_MAP()
 
 CWin2DinMFCView::CWin2DinMFCView() noexcept
 {
+	m_ppm_bitmap_resolution = SCALEPPI(72);
 	m_width = m_height = -1;
 	g_ddraw_data.Initialize();
 	m_dwFrequency = g_ddraw_data.GetFrequency();
@@ -272,6 +278,7 @@ int CWin2DinMFCView::OnCreate(LPCREATESTRUCT lpCreateStruct)
 	PrepareVisuals(m_compositor);
 
 	m_currentDpi = GetDpiForWindow(GetSafeHwnd());
+	m_ppm_bitmap_resolution = SCALEPPI(72);
 
 	CreateFlameEffect();
 
@@ -758,9 +765,8 @@ void CWin2DinMFCView::ConfigureEffect()
 
 BOOL CWin2DinMFCView::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
 {
-	//Zoom((zDelta < 0 ? -1 : 1) * m_ppm_bitmap_resolution * 25 / 4, pt);
-
-	Zoom(zDelta*4, pt);
+	Zoom((zDelta < 0 ? 1 : -1) * m_ppm_bitmap_resolution * 25 / 4, pt);
+	//Zoom(zDelta*4, pt);
 	return true;
 }
 
@@ -915,10 +921,20 @@ void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 {
 	KillTimer(456);
 
-	float scale = (zDelta < 0 ? -1 : 1) * 0.1;
+	// TODO: Add your message handler code here and/or call default
+	int _dpi25 = SCALEPPI(25);;
+	m_ppm_bitmap_resolution -= zDelta / _dpi25;
+	TRACE("zDelta: %d, res: %d\n", zDelta, m_ppm_bitmap_resolution);
+	if (m_ppm_bitmap_resolution < SCALEPPI(36))
+		m_ppm_bitmap_resolution = SCALEPPI(36);
+	if (m_ppm_bitmap_resolution > SCALEPPI(ppm_bitmap_MAX_resolution))
+		m_ppm_bitmap_resolution = SCALEPPI(ppm_bitmap_MAX_resolution);
+
+
+	float scale = m_ppm_bitmap_resolution / PPI(72.0f);
 	float2 centerPoint(pt.x, pt.y);
-	m_transform.m11 += scale;
-	m_transform.m22 += scale;
+	m_transform.m11 = scale;
+	m_transform.m22 = scale;
 
 	scale = m_transform.m11;
 
@@ -979,19 +995,69 @@ BOOL CWin2DinMFCView::OnScrollBy(CSize sizeScroll, BOOL bDoScroll)
 
 	return r;
 }
-#if 0
-float3x2 m_trans = make_float3x2_translation(m_x_position, m_y_position);
-float2 centerPoint(m_x_center, m_y_center);
-float3x2 m_scale = make_float3x2_scale(m_x_scale, centerPoint);
-m_transform = m_trans * m_scale;
 
-m_x_center = m_y_center = 0;
-m_x_position = m.m31;
-m_x_position = m.m32;
+ULONG CWin2DinMFCView::GetGestureStatus(CPoint /*ptTouch*/)
+{
+	return 0;
+}
 
 
-float m_x_position, m_y_position;
-float m_x_scale, m_y_scale;
-float m_x_center, m_y_center;
-#endif
+static int cur_dist = 0;
+static bool gesture_start = false;
 
+LRESULT CWin2DinMFCView::OnGesture(WPARAM w, LPARAM lParam)
+{
+	// Create a structure to populate and retrieve the extra message info.
+	GESTUREINFO gi;
+
+	ZeroMemory(&gi, sizeof(GESTUREINFO));
+
+	gi.cbSize = sizeof(GESTUREINFO);
+
+	BOOL bResult = GetGestureInfo((HGESTUREINFO)lParam, &gi);
+	BOOL bHandled = FALSE;
+	if (bResult) {
+		// now interpret the gesture
+		switch (gi.dwID) {
+
+		case GID_BEGIN:
+			gesture_start = true;
+			break;
+		case GID_ZOOM:
+			// Code for panning goes here
+		{
+			if (!gesture_start)
+			{
+				int d = gi.ullArguments - cur_dist;
+				if (d != 0)
+				{
+					int delta = d;
+
+					double _d = (delta < 0 ? 1 : -1) * (double)m_ppm_bitmap_resolution * 25 * (fabs(d) / 120.0) / 4;
+					Zoom((int)_d, CPoint(gi.ptsLocation.x, gi.ptsLocation.y));
+				}
+			}
+			gesture_start = false;
+			cur_dist = gi.ullArguments;
+
+		}
+		bHandled = TRUE;
+		break;
+		default:
+			// A gesture was not recognized
+			break;
+		}
+	}
+	else {
+		DWORD dwErr = GetLastError();
+		if (dwErr > 0) {
+			//MessageBoxW(hWnd, L"Error!", L"Could not retrieve a GESTUREINFO structure.", MB_OK);
+		}
+	}
+	if (bHandled) {
+		return 1;
+	}
+	else {
+		return DefWindowProc(WM_GESTURE, w, lParam);
+	}
+}

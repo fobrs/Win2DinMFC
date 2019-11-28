@@ -50,6 +50,7 @@ protected:
 	virtual void OnBeginPrinting(CDC* pDC, CPrintInfo* pInfo);
 	virtual void OnEndPrinting(CDC* pDC, CPrintInfo* pInfo);
 	virtual BOOL OnScrollBy(CSize sizeScroll, BOOL bDoScroll);
+	virtual ULONG GetGestureStatus(CPoint ptTouch);
 
 // Implementation
 public:
@@ -117,7 +118,7 @@ protected:
 	bool m_bIdleTranslateDragging;
 	DWORD m_dwFrequency;
 
-
+	int m_ppm_bitmap_resolution = 72;
 	float3x2 m_transform = { 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
 
 	float m_svg_width, m_svg_height;
@@ -140,6 +141,9 @@ public:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	virtual void OnInitialUpdate();
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+
+	LRESULT OnGesture(WPARAM w, LPARAM l);
+
 };
 
 #ifndef _DEBUG  // debug version in Win2DinMFCView.cpp
