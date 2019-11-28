@@ -1,7 +1,7 @@
 // Win2DinMFC.cpp : Defines the class behaviors for the application.
 //
 
-#include "stdafx.h"
+#include "pch.h"
 
 #include <unknwn.h>
 #include <windows.ui.composition.interop.h>

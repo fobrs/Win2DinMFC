@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "pch.h"
 
 
 #include <D2d1_1.h>

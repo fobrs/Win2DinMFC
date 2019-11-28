@@ -2,7 +2,7 @@
 // MainFrm.cpp : implementation of the CMainFrame class
 //
 
-#include "stdafx.h"
+#include "pch.h"
 #include "Win2DinMFC.h"
 
 #include "MainFrm.h"

@@ -2,7 +2,7 @@
 // Win2DinMFCDoc.cpp : implementation of the CWin2DinMFCDoc class
 //
 
-#include "stdafx.h"
+#include "pch.h"
 // SHARED_HANDLERS can be defined in an ATL project implementing preview, thumbnail
 // and search filter handlers and allows sharing of document code with that project.
 #ifndef SHARED_HANDLERS
@@ -63,8 +63,7 @@ void CWin2DinMFCDoc::Serialize(CArchive& ar)
 		CFile * file = ar.GetFile();
 		if (file)
 		{
-			auto len = file->GetLength();
-
+			UINT len = (UINT)file->GetLength();
 			m_svg_xml.resize(len + 2, 0);
 			if (ar.Read(&m_svg_xml[0], len) != len)
 			{

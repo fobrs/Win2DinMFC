@@ -1,7 +1,7 @@
 // Win2DinMFCView.cpp : implementation of the CWin2DinMFCView class
 //
 
-#include "stdafx.h"
+#include "pch.h"
 // SHARED_HANDLERS can be defined in an ATL project implementing preview, thumbnail
 // and search filter handlers and allows sharing of document code with that project.
 #ifndef SHARED_HANDLERS
@@ -30,13 +30,13 @@
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.Metadata.h>
 #include <winrt/Windows.Foundation.h>
-#include <winrt/Windows.Foundation.Numerics.h>
 #include <winrt/Windows.Graphics.h>
 
 #include "Win2DinMFCDoc.h"
 #include "Win2DinMFCView.h"
 #include "timer.h"
 
+#include "ddraw_global.h"
 
 using namespace winrt;
 using namespace winrt::Windows::Foundation::Numerics;
@@ -52,6 +52,13 @@ using namespace winrt::Microsoft::Graphics::Canvas::Text;
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
+
+
+
+ddraw_data_t g_ddraw_data;
+bool g_m_layoutdiagram_damp_scrolling = true;
+
+
 
 std::wstring UTF8_to_wchar(const char * in)
 {
@@ -97,12 +104,19 @@ std::wstring ReplaceString(std::wstring subject, const std::wstring& search,
 	return subject;
 }
 
+static int round_to_int(double v)
+{
+	return int(v + ((v < 0.0) ? -0.5 : 0.5));
+}
+
+
+
 
 // CWin2DinMFCView
 
-IMPLEMENT_DYNCREATE(CWin2DinMFCView, CView)
+IMPLEMENT_DYNCREATE(CWin2DinMFCView, CMyScrollView)
 
-BEGIN_MESSAGE_MAP(CWin2DinMFCView, CView)
+BEGIN_MESSAGE_MAP(CWin2DinMFCView, CMyScrollView)
 	// Standard printing commands
 	ON_COMMAND(ID_FILE_PRINT, &CView::OnFilePrint)
 	ON_COMMAND(ID_FILE_PRINT_DIRECT, &CView::OnFilePrint)
@@ -111,6 +125,12 @@ BEGIN_MESSAGE_MAP(CWin2DinMFCView, CView)
 	ON_WM_RBUTTONUP()
 	ON_WM_CREATE()
 	ON_WM_SIZE()
+	ON_WM_MOUSEWHEEL()
+	ON_WM_LBUTTONDOWN()
+	ON_WM_LBUTTONUP()
+	ON_WM_MOUSEMOVE()
+	ON_WM_ERASEBKGND()
+
 END_MESSAGE_MAP()
 
 // CWin2DinMFCView construction/destruction
@@ -118,6 +138,9 @@ END_MESSAGE_MAP()
 CWin2DinMFCView::CWin2DinMFCView() noexcept
 {
 	m_width = m_height = -1;
+	g_ddraw_data.Initialize();
+	m_dwFrequency = g_ddraw_data.GetFrequency();
+
 }
 
 CWin2DinMFCView::~CWin2DinMFCView()
@@ -129,7 +152,7 @@ BOOL CWin2DinMFCView::PreCreateWindow(CREATESTRUCT& cs)
 	// TODO: Modify the Window class or styles here by modifying
 	//  the CREATESTRUCT cs
 
-	return CView::PreCreateWindow(cs);
+	return CMyScrollView::PreCreateWindow(cs);
 }
 
 // CWin2DinMFCView drawing
@@ -142,6 +165,12 @@ void CWin2DinMFCView::OnDraw(CDC* /*pDC*/)
 		return;
 
 	// TODO: add draw code for native data here
+
+	if (m_svg != nullptr)
+	{
+		Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, m_currentDpi);
+	}
+
 }
 
 
@@ -208,6 +237,12 @@ CWin2DinMFCDoc* CWin2DinMFCView::GetDocument() const // non-debug version is inl
 
 // CWin2DinMFCView message handlers
 
+BOOL CWin2DinMFCView::OnEraseBkgnd(CDC* pDC)
+{
+	return TRUE;
+}
+
+
 DesktopWindowTarget CWin2DinMFCView::CreateDesktopWindowTarget(Compositor const& compositor, HWND window)
 {
 	namespace abi = ABI::Windows::UI::Composition::Desktop;
@@ -224,14 +259,14 @@ void CWin2DinMFCView::PrepareVisuals(Compositor const& compositor)
 	m_target = CreateDesktopWindowTarget(compositor, GetSafeHwnd());
 	m_root = compositor.CreateSpriteVisual();
 	m_root.RelativeSizeAdjustment({ 1.05f, 1.05f });
-	m_root.Brush(compositor.CreateColorBrush({ 0xFF, 0xFF, 0xFF , 0xFF }));
+	m_root.Brush(compositor.CreateColorBrush({ 0x00, 0x00, 0x00 , 0x00 }));
 	m_target.Root(m_root);
 }
 
 
 int CWin2DinMFCView::OnCreate(LPCREATESTRUCT lpCreateStruct)
 {
-	if (CView::OnCreate(lpCreateStruct) == -1)
+	if (CMyScrollView::OnCreate(lpCreateStruct) == -1)
 		return -1;
 
 	PrepareVisuals(m_compositor);
@@ -267,7 +302,7 @@ bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 			bool new_bitmap = false;
 			if (m_myBitmap == nullptr)
 			{
-				CanvasRenderTarget my_bitmap(rc, width, height, dpi);
+				CanvasRenderTarget my_bitmap(rc, width, height, (float)dpi);
 				m_myBitmap = my_bitmap;
 				new_bitmap = true;
 			}
@@ -279,7 +314,7 @@ bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 			drawingSession.FillRectangle(r, w);
 
 			float2 c(cx + wx, cy + wy);
-			auto m = make_float3x2_rotation(m_angle * M_PI / 180.0, c);
+			auto m = make_float3x2_rotation((float)(m_angle * M_PI / 180.0), c);
 			auto md = m * drawingSession.Transform();
 			drawingSession.Transform(md);
 
@@ -295,7 +330,7 @@ bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 			winrt::hstring t{ L"Hello Win2D in MFC!" };
 
 			Rect rt{ cx, cy, wx * 4, wy * 4 };
-			CanvasRenderTarget my_text(rc, wx * 4, wy * 4, dpi);
+			CanvasRenderTarget my_text(rc, (float)wx * 4, (float)wy * 4, (float)dpi);
 			auto ds = my_text.CreateDrawingSession();
 			auto b = Colors::Black();
 			b.A = 0;
@@ -329,20 +364,21 @@ bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 		}
 		else if (pDoc)
 		{
-			auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
-			auto rc = drawingSession0.as< ICanvasResourceCreator>();
-
-			if (m_svg == nullptr&& pDoc->m_svg_xml.size() > 0)
+			if (m_svg)
 			{
-				LoadSvg(rc);
+				auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
+				auto rc = drawingSession0.as< ICanvasResourceCreator>();
+
+				drawingSession0.Transform(m_transform);
+
+				winrt::Windows::Foundation::Size size((float)m_width, (float)m_height);
+				drawingSession0.Clear(Colors::White());
+				drawingSession0.DrawSvg(m_svg, size);
+				drawingSession0.Close();
 			}
-			winrt::Windows::Foundation::Size size(m_width, m_height);
-			drawingSession0.Clear(Colors::White());
-			drawingSession0.DrawSvg(m_svg, size);
-			drawingSession0.Close();
 		}
 	}
-	catch (winrt::hresult_error const& ex)
+	catch (winrt::hresult_error const& /*ex*/)
 	{
 		return false;
 	}
@@ -350,7 +386,7 @@ bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 }
 
 
-bool CWin2DinMFCView::LoadSvg(ICanvasResourceCreator &rc)
+bool CWin2DinMFCView::LoadSvg()
 {
 	auto pDoc = GetDocument();
 
@@ -369,7 +405,71 @@ bool CWin2DinMFCView::LoadSvg(ICanvasResourceCreator &rc)
 		w = ReplaceString(w, L"encoding=\"UTF-8", L"encoding=\"UTF-16");
 	}
 	m_w = winrt::hstring(w);
-	m_svg =  CanvasSvgDocument::LoadFromXml(rc, m_w);
+
+	try {
+		auto canvasDevice = CanvasDevice::GetSharedDevice();
+		m_svg = CanvasSvgDocument::LoadFromXml(canvasDevice, m_w);
+	}
+	catch (winrt::hresult_error & ex)
+	{
+		CString err;
+		err.Format(L"Error loading SVG: %s", ex.message());
+		AfxMessageBox(err);
+
+		pDoc->m_svg_xml.clear();
+	}
+
+	if (m_svg)
+	{
+
+		auto root_element = m_svg.Root();
+
+		if (root_element)
+		{
+			try {
+				auto width = root_element.GetFloatAttribute(L"width");
+				auto height = root_element.GetFloatAttribute(L"height");
+
+				m_svg_width = width;
+				m_svg_height = height;
+
+			}
+			catch (winrt::hresult_error&)
+			{
+				Rect viewBox;
+				try {
+					viewBox = root_element.GetRectangleAttribute(L"viewBox");
+
+					m_svg_width = viewBox.Width;
+					m_svg_height = viewBox.Height;
+
+				}
+				catch (winrt::hresult_error&)
+				{
+				}
+			}
+		}
+#if 0
+
+		com_ptr<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative> nativeDeviceWrapper = m_svg.as<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative>();
+		com_ptr<ID2D1SvgDocument> pSvgDoc{ nullptr };
+		check_hresult(nativeDeviceWrapper->GetNativeResource(nullptr, 0.0f, guid_of<ID2D1SvgDocument>(), pSvgDoc.put_void()));
+		auto size = pSvgDoc->GetViewportSize();
+#endif
+		CSize total(m_svg_width, m_svg_height);
+		SetScrollSizes(MM_TEXT, total);
+		
+		CPoint scroll_pos(0, 0);
+		ScrollToPosition(scroll_pos);
+
+		m_transform.m31 = 0;
+		m_transform.m32 = 0;
+
+		m_transform.identity();
+	}
+
+
+
 	return true;
 }
 
@@ -411,12 +511,7 @@ void CWin2DinMFCView::OnDirect3DDeviceLost(DeviceLostHelper const* /* sender */,
 		m_svg.Close();
 		m_svg = nullptr;
 	}
-
 	m_b_in_device_lost = false;
-
-	CreateFlameEffect();
-	m_text = "";
-
 	Scenario_Wind2d(m_compositor, m_root, m_currentDpi, m_width, m_height);
 
 }
@@ -435,7 +530,7 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 		m_width = cx, m_height = cy;
 		try {
 			SpriteVisual container = compositor.CreateSpriteVisual();
-			container.Size({ m_width, m_height });
+			container.Size({ (float)m_width, (float)m_height });
 
 			//container.Offset({ 0.0f, 900.0f, 1.0f });
 
@@ -466,7 +561,7 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 
 				// Create a drawing surface.
 				m_drawingSurface = m_graphicsDevice.CreateDrawingSurface(
-					Size(m_width, m_height),
+					Size((float)m_width, (float)m_height),
 					winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
 					winrt::Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied);
 
@@ -479,25 +574,28 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 				m_myBitmap.Close();
 			m_myBitmap = nullptr;
 
+			CreateFlameEffect();
+			m_text = "";
+
 			auto c = root.Children();
 			if (c.Count() > 0)
 				c.RemoveAll();
 			c.InsertAtTop(container);
 
 		}
-		catch (winrt::hresult_error const& ex)
+		catch (winrt::hresult_error const& /*ex*/)
 		{
 			m_cbt.stop();
 		}
 	}
 
-	Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, dpi);
+	Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, dpi);
 
 	if (m_svg == nullptr)
 	{
 		m_cbt.start(1000.0 / 60.0, [this, dpi]
 			{
-				if (Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, dpi) == false)
+				if (Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, dpi) == false)
 					return false;
 				m_angle += 1.0f;
 				return true;
@@ -510,7 +608,7 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 
 void CWin2DinMFCView::OnInitialUpdate()
 {
-	CView::OnInitialUpdate();
+	CMyScrollView::OnInitialUpdate();
 
 	auto pDoc = GetDocument();
 	if (!pDoc || pDoc->m_svg_xml.size() == 0)
@@ -521,6 +619,14 @@ void CWin2DinMFCView::OnInitialUpdate()
 			m_svg = nullptr;
 		}
 		Scenario_Wind2d(m_compositor, m_root, m_currentDpi, 1400, 1000);
+
+		CSize total(m_width, m_height);
+		SetScrollSizes(MM_TEXT, total);
+		CPoint scroll_pos(0, 0);
+		ScrollToPosition(scroll_pos);
+		m_transform.m31 = 0;
+		m_transform.m32 = 0;
+
 	}
 	else
 	{
@@ -530,14 +636,25 @@ void CWin2DinMFCView::OnInitialUpdate()
 			m_svg.Close();
 			m_svg = nullptr;
 		}
-		Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, m_width, m_height, m_currentDpi);
+
+		if (m_svg == nullptr && pDoc->m_svg_xml.size() > 0)
+		{
+			if (!LoadSvg())
+			{
+			}
+		}
+
+		Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, m_currentDpi);
 	}
+
+	
+
 }
 
 
 void CWin2DinMFCView::OnSize(UINT nType, int cx, int cy)
 {
-	CView::OnSize(nType, cx, cy);
+	CMyScrollView::OnSize(nType, cx, cy);
 	if (cx > 0 && cy > 0)
 		Scenario_Wind2d(m_compositor, m_root, m_currentDpi, cx, cy);
 }
@@ -613,6 +730,7 @@ void CWin2DinMFCView::SetupText(ICanvasResourceCreator resourceCreator)
 	tf.FontSize(m_fontSize);
 	tf.HorizontalAlignment(CanvasHorizontalAlignment::Center);
 	tf.VerticalAlignment(CanvasVerticalAlignment::Top);
+	
 
 	winrt::hstring t;
 	t = winrt::to_hstring(m_text);
@@ -636,3 +754,244 @@ void CWin2DinMFCView::ConfigureEffect()
 	auto centerPoint = float2(0, verticalOffset);
 	m_flamePosition.TransformMatrix(make_float3x2_scale(1, 2, centerPoint));
 }
+
+
+BOOL CWin2DinMFCView::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
+{
+	//Zoom((zDelta < 0 ? -1 : 1) * m_ppm_bitmap_resolution * 25 / 4, pt);
+
+	Zoom(zDelta*4, pt);
+	return true;
+}
+
+
+void CWin2DinMFCView::OnLButtonDown(UINT nFlags, CPoint point)
+{
+	//KillTimer(456);
+	m_scroll_diff = 0;
+	SetFocus();
+	BOOL bH, bV;
+	CheckScrollBars(bH, bV);
+	if (GetCapture() != this)
+	{
+		SetCapture();
+		m_bTranslateDragging = true;
+		m_pt_cur_mouse = point;
+		m_scroll_start_time = ::clock();
+//		::SetCursor(GetGitterApp()->m_cursorMove);
+	}
+	CMyScrollView::OnLButtonDown(nFlags, point);
+}
+
+
+
+void CWin2DinMFCView::OnLButtonUp(UINT nFlags, CPoint point)
+{
+	if (m_bTranslateDragging)
+	{
+		ReleaseCapture();
+		m_bTranslateDragging = false;
+
+		if (m_scroll_time_diff > 6 && m_scroll_diff != CSize(0, 0))
+		{
+			m_bIdleTranslateDragging = true;
+			int milli_seconds = m_scroll_time_diff * 1000 / CLOCKS_PER_SEC;
+			int dt = 1000 / (m_dwFrequency);
+
+			int dx = m_scroll_diff.cx;
+			int dy = m_scroll_diff.cy;
+			int f = m_dwFrequency * milli_seconds;
+
+			dx = (dx * 1000) / f;
+			dy = (dy * 1000) / f;
+			//				LogMessage(0, "%d, %d, %d %d %d (%d %d) %d", dt, dx, dy, m_dwFrequency, milli_seconds, m_scroll_diff.cx, m_scroll_diff.cy, m_scroll_time_diff);
+
+			m_scroll_diff.cx = dx;
+			m_scroll_diff.cy = dy;
+			g_ddraw_data.WaitForVSync();
+			SetTimer(456, dt, (void(__stdcall*)(HWND, UINT, UINT_PTR, DWORD)) & CWin2DinMFCView::TimerProc);
+
+		}
+	}
+
+
+	CMyScrollView::OnLButtonUp(nFlags, point);
+}
+
+void CALLBACK CWin2DinMFCView::TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
+{
+	CWin2DinMFCView* pThis = (CWin2DinMFCView*)CWnd::FromHandle(hwnd);
+	if (pThis && idEvent == 456)
+	{
+		CPoint p, q;
+		q = p = pThis->GetScrollPosition();
+		p = p + pThis->m_scroll_diff;
+		if (g_m_layoutdiagram_damp_scrolling)
+		{
+			float cx = pThis->m_scroll_diff.cx;
+			float cy = pThis->m_scroll_diff.cy;
+			float sign_cx = cx >= 0.0f ? 1.0f : -1.0f;
+			float sign_cy = cy >= 0.0f ? 1.0f : -1.0f;
+			float _cx = cx;
+			float _cy = cy;
+#if 0
+			const float pi = 3.141592653589793238462643383279f;
+			if (cx != 0.0f)
+				_cx -= sign_cx * sin(fabs(cx) * pi / 180.0f) / fabs(cx);
+			if (cy != 0.0f)
+				_cy -= sign_cy * sin(fabs(cy) * pi / 180.0f) / fabs(cy);
+#endif
+			if (_cx != 0.0f)
+				_cx -= sign_cx;
+			if (_cy != 0.0f)
+				_cy -= sign_cy;
+			pThis->m_scroll_diff = CSize(_cx, _cy);
+			//			LogMessage(0,"cx: %.2f, cy: %.2f; _cx: %.2f, _cy: %.2f", cx, cy, _cx, _cy);
+		}
+
+		g_ddraw_data.WaitForVSync();
+
+		pThis->ScrollToPosition(p);
+
+		pThis->m_transform.m31 = -p.x;
+		pThis->m_transform.m32 = -p.y;
+
+		pThis->UpdateWindow();
+		p = pThis->GetScrollPosition();
+
+
+		if (p == q)
+		{
+			pThis->m_scroll_diff = CSize(0, 0);
+			pThis->KillTimer(456);
+		}
+	}
+}
+
+
+
+
+
+void CWin2DinMFCView::OnMouseMove(UINT nFlags, CPoint point)
+{
+	// TODO: Add your message handler code here and/or call default
+	if (m_bTranslateDragging)
+	{
+		clock_t c = ::clock();
+		m_scroll_time_diff = c - m_scroll_start_time;
+		m_scroll_start_time = c;
+
+		CPoint p0, p;
+		p0 = p = GetScrollPosition();
+		CSize s = point - m_pt_cur_mouse;
+		//		s.cy = -s.cy;
+		p -= s;
+		if (p.x < 0) p.x = 0;
+		if (p.y < 0) p.y = 0;
+		m_pt_cur_mouse = point;
+		BOOL bH, bV;
+		CheckScrollBars(bH, bV);
+		if (!bH)
+			p.x = 0;
+		if (!bV)
+			p.y = 0;
+
+		m_scroll_diff = p - p0;
+
+		if (m_scroll_diff != CSize(0, 0))
+		{
+			ScrollToPosition(p);
+
+			m_transform.m31 = -p.x;
+			m_transform.m32 = -p.y;
+
+			Invalidate();
+		}
+	}
+	//CMyScrollView::OnMouseMove(nFlags, point);
+}
+
+void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
+{
+	KillTimer(456);
+
+	float scale = (zDelta < 0 ? -1 : 1) * 0.1;
+	float2 centerPoint(pt.x, pt.y);
+	m_transform.m11 += scale;
+	m_transform.m22 += scale;
+
+	scale = m_transform.m11;
+
+	m_scroll_diff = 0;
+
+	CPoint mp = pt;
+	ScreenToClient(&mp);
+	RECT r;
+	GetClientRect(&r);
+	CPoint p;
+	p = GetScrollPosition();
+	mp += p;
+	CSize total = GetTotalSize();
+
+	float frac_x = (float)mp.x / (total.cx);
+	float frac_y = (float)mp.y / (total.cy);
+
+
+	total = CSize(m_svg_width* scale, m_svg_height * scale);
+
+	if (total.cx > 100000000)
+		total.cx = 100000000;
+	if (total.cy > 100000000)
+		total.cy = 100000000;
+
+	if (total.cx < 0)
+		total.cx = 0;
+	if (total.cy < 0)
+		total.cy = 0;
+
+	SetScrollSizes(MM_TEXT, total);
+
+	CPoint mp2;
+	mp2.x = round_to_int(frac_x * (total.cx));
+	mp2.y = round_to_int(frac_y * (total.cy));
+	p += (mp2 - mp);
+	BOOL bH, bV;
+	CheckScrollBars(bH, bV);
+	if (!bH)
+		p.x = 0;
+	if (!bV)
+		p.y = 0;
+	//	p.x = p.y = 0;
+	ScrollToPosition(p);
+	m_transform.m31 = -p.x;
+	m_transform.m32 = -p.y;
+
+	Invalidate();
+	//	UpdateWindow();
+}
+
+BOOL CWin2DinMFCView::OnScrollBy(CSize sizeScroll, BOOL bDoScroll)
+{
+	auto r = CMyScrollView::OnScrollBy(sizeScroll, bDoScroll);
+
+	m_transform.m31 = -m_curScrollPos.x;
+	m_transform.m32 = -m_curScrollPos.y;
+
+	return r;
+}
+#if 0
+float3x2 m_trans = make_float3x2_translation(m_x_position, m_y_position);
+float2 centerPoint(m_x_center, m_y_center);
+float3x2 m_scale = make_float3x2_scale(m_x_scale, centerPoint);
+m_transform = m_trans * m_scale;
+
+m_x_center = m_y_center = 0;
+m_x_position = m.m31;
+m_x_position = m.m32;
+
+
+float m_x_position, m_y_position;
+float m_x_scale, m_y_scale;
+float m_x_center, m_y_center;
+#endif
+

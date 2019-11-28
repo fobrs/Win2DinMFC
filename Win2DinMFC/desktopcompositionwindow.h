@@ -23,7 +23,7 @@
 //  ---------------------------------------------------------------------------------
 
 #pragma once
-#include "stdafx.h"
+#include "pch.h"
 #include <functional>
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 

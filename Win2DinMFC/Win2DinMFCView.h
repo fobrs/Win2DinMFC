@@ -3,6 +3,7 @@
 
 #pragma once
 #include "timer.h"
+#include "MyScrollView.h"
 
 #include <winrt/Windows.UI.Composition.Desktop.h>
 #include "winrt/Microsoft.Graphics.Canvas.h"
@@ -10,6 +11,8 @@
 #include "winrt/Microsoft.Graphics.Canvas.Text.h"
 #include "winrt/Microsoft.Graphics.Canvas.SVG.h"
 #include "winrt/Microsoft.Graphics.Canvas.UI.Composition.h"
+#include <winrt/Windows.Foundation.Numerics.h>
+#include <d2d1svg.h>
 
 using namespace winrt;
 using namespace winrt::Windows::UI;
@@ -21,10 +24,11 @@ using namespace winrt::Microsoft::Graphics::Canvas::Effects;
 using namespace winrt::Microsoft::Graphics::Canvas::Svg;
 using namespace winrt::Microsoft::Graphics::Canvas::UI::Composition;
 using namespace winrt::Windows::Foundation;
+using namespace winrt::Windows::Foundation::Numerics;
 
 #include "devicelost.h"
 
-class CWin2DinMFCView : public CView
+class CWin2DinMFCView : public CMyScrollView
 {
 protected: // create from serialization only
 	CWin2DinMFCView() noexcept;
@@ -45,6 +49,7 @@ protected:
 	virtual BOOL OnPreparePrinting(CPrintInfo* pInfo);
 	virtual void OnBeginPrinting(CDC* pDC, CPrintInfo* pInfo);
 	virtual void OnEndPrinting(CDC* pDC, CPrintInfo* pInfo);
+	virtual BOOL OnScrollBy(CSize sizeScroll, BOOL bDoScroll);
 
 // Implementation
 public:
@@ -59,9 +64,12 @@ protected:
 	DesktopWindowTarget CWin2DinMFCView::CreateDesktopWindowTarget(Compositor const& compositor, HWND window);
 	void CWin2DinMFCView::PrepareVisuals(Compositor const& compositor);
 
+	void Zoom(int zDelta, CPoint pt);
+	static VOID CALLBACK TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
+
 	bool Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi);
 	void Scenario_Wind2d(const Compositor & compositor, const ContainerVisual & root, UINT dpi, int cx, int cy);
-	bool LoadSvg(ICanvasResourceCreator &rc);
+	bool LoadSvg();
 
 	HWND m_interopWindowHandle = nullptr;
 	Compositor m_compositor;
@@ -69,7 +77,7 @@ protected:
 	SpriteVisual m_root{ nullptr };
 
 	UINT m_currentDpi;
-	float m_width, m_height;
+	int m_width, m_height;
 
 	float m_angle = 0.0f;
 
@@ -83,7 +91,6 @@ protected:
 	CallBackTimer m_cbt;
 
 	CanvasSvgDocument m_svg{ nullptr };
-
 	winrt::hstring m_w;
 
 
@@ -100,11 +107,34 @@ protected:
 	std::string m_text, m_newText;
 	float m_fontSize = 10.0f;
 
+
+	// zoom, pan
+	bool m_bTranslateDragging = false;
+	CPoint m_pt_cur_mouse;
+	CSize m_scroll_diff;
+	clock_t m_scroll_start_time;
+	unsigned int m_scroll_time_diff;
+	bool m_bIdleTranslateDragging;
+	DWORD m_dwFrequency;
+
+
+	float3x2 m_transform = { 1.0, 0.0, 0.0, 1.0, 0.0, 0.0 };
+
+	float m_svg_width, m_svg_height;
+
+
 // Generated message map functions
 protected:
+	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
 	afx_msg void OnFilePrintPreview();
 	afx_msg void OnRButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnContextMenu(CWnd* pWnd, CPoint point);
+
+	afx_msg BOOL OnMouseWheel(UINT nFlags, short zDelta, CPoint pt);
+	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
+	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
+	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+
 	DECLARE_MESSAGE_MAP()
 public:
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
