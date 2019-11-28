@@ -6,9 +6,9 @@ The Application is also capable of loading SVG files and use Win2D to render the
 The code in this sample shows you how to use the Win2D winrt component in a classic C++ MFC app with the help of C++/WinRT.
 
 #### Tools:
-Microsoft Visual Studio Professional 2017 Version 15.9.17
-SDK: 10.0.17763.0
-Microsoft Visual C++ Redistributable for Visual Studio 2015, 2017 and 2019
+Microsoft Visual Studio Professional 2017 Version 15.9.17  
+SDK: 10.0.17763.0  
+Microsoft Visual C++ Redistributable for Visual Studio 2015, 2017 and 2019  
 
 #### Nuget packages:
 Microsoft.UI.Xaml  
