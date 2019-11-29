@@ -77,7 +77,7 @@ protected:
 	DesktopWindowTarget m_target{ nullptr };
 	SpriteVisual m_root{ nullptr };
 
-	UINT m_currentDpi;
+	int m_currentDpi;
 	int m_width, m_height;
 
 	float m_angle = 0.0f;

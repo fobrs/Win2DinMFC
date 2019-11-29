@@ -373,6 +373,7 @@ bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 				auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
 				auto rc = drawingSession0.as< ICanvasResourceCreator>();
 
+				drawingSession0.Antialiasing(CanvasAntialiasing::Antialiased);
 				drawingSession0.Transform(m_transform);
 
 				winrt::Windows::Foundation::Size size((float)m_width, (float)m_height);
@@ -400,7 +401,7 @@ bool CWin2DinMFCView::LoadSvg()
 	if (pDoc->m_svg_xml[0] == -1 && pDoc->m_svg_xml[1] == -2)
 	{
 		//vector data is unicode
-		w = std::wstring(((wchar_t*)&pDoc->m_svg_xml[0]) + 1, pDoc->m_svg_xml.size() / 2 - 1);
+		w = std::wstring(((wchar_t*)&pDoc->m_svg_xml[0]) + 1, pDoc->m_svg_xml.size() / 2 - 2);
 	}
 	else
 	{
@@ -411,13 +412,18 @@ bool CWin2DinMFCView::LoadSvg()
 	m_w = winrt::hstring(w);
 
 	try {
+		if (m_svg != nullptr)
+			m_svg.Close();
+		m_svg = nullptr;
 		auto canvasDevice = CanvasDevice::GetSharedDevice();
 		m_svg = CanvasSvgDocument::LoadFromXml(canvasDevice, m_w);
 	}
 	catch (winrt::hresult_error & ex)
 	{
 		CString err;
-		err.Format(L"Error loading SVG: %s", ex.message());
+		auto m = ex.message();
+		std::wstring c = m.c_str();
+		err.Format(L"Error loading SVG: %ls", c.c_str());
 		AfxMessageBox(err);
 
 		pDoc->m_svg_xml.clear();
@@ -460,7 +466,7 @@ bool CWin2DinMFCView::LoadSvg()
 		check_hresult(nativeDeviceWrapper->GetNativeResource(nullptr, 0.0f, guid_of<ID2D1SvgDocument>(), pSvgDoc.put_void()));
 		auto size = pSvgDoc->GetViewportSize();
 #endif
-		CSize total(m_svg_width, m_svg_height);
+		CSize total((int)m_svg_width, (int)m_svg_height);
 		SetScrollSizes(MM_TEXT, total);
 		
 		CPoint scroll_pos(0, 0);
@@ -831,8 +837,8 @@ void CALLBACK CWin2DinMFCView::TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent,
 		p = p + pThis->m_scroll_diff;
 		if (g_m_layoutdiagram_damp_scrolling)
 		{
-			float cx = pThis->m_scroll_diff.cx;
-			float cy = pThis->m_scroll_diff.cy;
+			float cx = (float)pThis->m_scroll_diff.cx;
+			float cy = (float)pThis->m_scroll_diff.cy;
 			float sign_cx = cx >= 0.0f ? 1.0f : -1.0f;
 			float sign_cy = cy >= 0.0f ? 1.0f : -1.0f;
 			float _cx = cx;
@@ -848,7 +854,7 @@ void CALLBACK CWin2DinMFCView::TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent,
 				_cx -= sign_cx;
 			if (_cy != 0.0f)
 				_cy -= sign_cy;
-			pThis->m_scroll_diff = CSize(_cx, _cy);
+			pThis->m_scroll_diff = CSize((int)_cx, (int)_cy);
 			//			LogMessage(0,"cx: %.2f, cy: %.2f; _cx: %.2f, _cy: %.2f", cx, cy, _cx, _cy);
 		}
 
@@ -856,8 +862,8 @@ void CALLBACK CWin2DinMFCView::TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent,
 
 		pThis->ScrollToPosition(p);
 
-		pThis->m_transform.m31 = -p.x;
-		pThis->m_transform.m32 = -p.y;
+		pThis->m_transform.m31 = (float)-p.x;
+		pThis->m_transform.m32 = (float)-p.y;
 
 		pThis->UpdateWindow();
 		p = pThis->GetScrollPosition();
@@ -905,8 +911,8 @@ void CWin2DinMFCView::OnMouseMove(UINT nFlags, CPoint point)
 		{
 			ScrollToPosition(p);
 
-			m_transform.m31 = -p.x;
-			m_transform.m32 = -p.y;
+			m_transform.m31 = (float)-p.x;
+			m_transform.m32 = (float)-p.y;
 
 			Invalidate();
 		}
@@ -929,7 +935,7 @@ void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 
 
 	float scale = m_ppm_bitmap_resolution / PPI(72.0f);
-	float2 centerPoint(pt.x, pt.y);
+	float2 centerPoint((float)pt.x, (float)pt.y);
 	m_transform.m11 = scale;
 	m_transform.m22 = scale;
 
@@ -950,7 +956,7 @@ void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 	float frac_y = (float)mp.y / (total.cy);
 
 
-	total = CSize(m_svg_width* scale, m_svg_height * scale);
+	total = CSize((int)(m_svg_width* scale), (int)(m_svg_height * scale));
 
 	if (total.cx > 100000000)
 		total.cx = 100000000;
@@ -976,8 +982,8 @@ void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 		p.y = 0;
 	//	p.x = p.y = 0;
 	ScrollToPosition(p);
-	m_transform.m31 = -p.x;
-	m_transform.m32 = -p.y;
+	m_transform.m31 = (float)-p.x;
+	m_transform.m32 = (float)-p.y;
 
 	Invalidate();
 	//	UpdateWindow();
@@ -987,8 +993,8 @@ BOOL CWin2DinMFCView::OnScrollBy(CSize sizeScroll, BOOL bDoScroll)
 {
 	auto r = CMyScrollView::OnScrollBy(sizeScroll, bDoScroll);
 
-	m_transform.m31 = -m_curScrollPos.x;
-	m_transform.m32 = -m_curScrollPos.y;
+	m_transform.m31 = (float)-m_curScrollPos.x;
+	m_transform.m32 = (float)-m_curScrollPos.y;
 
 	return r;
 }
@@ -1025,7 +1031,7 @@ LRESULT CWin2DinMFCView::OnGesture(WPARAM w, LPARAM lParam)
 		{
 			if (!gesture_start)
 			{
-				int d = gi.ullArguments - cur_dist;
+				int d = (int)gi.ullArguments - cur_dist;
 				if (d != 0)
 				{
 					int delta = d;
@@ -1035,7 +1041,7 @@ LRESULT CWin2DinMFCView::OnGesture(WPARAM w, LPARAM lParam)
 				}
 			}
 			gesture_start = false;
-			cur_dist = gi.ullArguments;
+			cur_dist = (int)gi.ullArguments;
 
 		}
 		bHandled = TRUE;
