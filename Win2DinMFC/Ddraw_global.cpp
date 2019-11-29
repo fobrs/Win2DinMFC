@@ -49,7 +49,7 @@ void ddraw_data_t::Initialize()
 				if (!FAILED(r))
 				{
 					r = m_dd->GetMonitorFrequency(&m_dwFrequency);
-#if 0
+#if 1
 					if (m_dd != 0)
 					{
 						m_dd->Release();

@@ -539,8 +539,22 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 		m_cbt.stop();
 		m_width = cx, m_height = cy;
 		try {
-			SpriteVisual container = compositor.CreateSpriteVisual();
-			container.Size({ (float)m_width, (float)m_height });
+
+			SpriteVisual container{ nullptr };
+			auto c = root.Children();
+			if (c.Count() > 0)
+			{
+				//c.
+				auto obj = c.First().Current();
+				container = obj.as< SpriteVisual>();
+				container.Size({ (float)m_width, (float)m_height });
+			}
+			else
+			{
+				container = compositor.CreateSpriteVisual();
+				container.Size({ (float)m_width, (float)m_height });
+				c.InsertAtTop(container);
+			}
 
 			//container.Offset({ 0.0f, 900.0f, 1.0f });
 
@@ -587,19 +601,16 @@ void CWin2DinMFCView::Scenario_Wind2d(const Compositor & compositor, const Conta
 			CreateFlameEffect();
 			m_text = "";
 
-			auto c = root.Children();
-			if (c.Count() > 0)
-				c.RemoveAll();
-			c.InsertAtTop(container);
+			Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, dpi);
 
 		}
-		catch (winrt::hresult_error const& /*ex*/)
+		catch (winrt::hresult_error const& ex)
 		{
 			m_cbt.stop();
 		}
 	}
 
-	Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, dpi);
+	//Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, dpi);
 
 	if (m_svg == nullptr)
 	{
@@ -770,7 +781,7 @@ BOOL CWin2DinMFCView::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
 {
 	Zoom((zDelta < 0 ? 1 : -1) * m_ppm_bitmap_resolution * 25 / 4, pt);
 	//Zoom(zDelta*4, pt);
-	return true;
+	return 0;
 }
 
 
@@ -955,7 +966,6 @@ void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 	float frac_x = (float)mp.x / (total.cx);
 	float frac_y = (float)mp.y / (total.cy);
 
-
 	total = CSize((int)(m_svg_width* scale), (int)(m_svg_height * scale));
 
 	if (total.cx > 100000000)
@@ -968,25 +978,23 @@ void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 	if (total.cy < 0)
 		total.cy = 0;
 
-	SetScrollSizes(MM_TEXT, total);
 
 	CPoint mp2;
 	mp2.x = round_to_int(frac_x * (total.cx));
 	mp2.y = round_to_int(frac_y * (total.cy));
 	p += (mp2 - mp);
 	BOOL bH, bV;
-	CheckScrollBars(bH, bV);
-	if (!bH)
+//	CheckScrollBars(bH, bV);
+	if (total.cx <= (r.right - r.left))
 		p.x = 0;
-	if (!bV)
+	if (total.cy <= (r.bottom - r.top))
 		p.y = 0;
 	//	p.x = p.y = 0;
-	ScrollToPosition(p);
 	m_transform.m31 = (float)-p.x;
 	m_transform.m32 = (float)-p.y;
-
+	SetScrollSizes(MM_TEXT, total);
+	ScrollToPosition(p);
 	Invalidate();
-	//	UpdateWindow();
 }
 
 BOOL CWin2DinMFCView::OnScrollBy(CSize sizeScroll, BOOL bDoScroll)
