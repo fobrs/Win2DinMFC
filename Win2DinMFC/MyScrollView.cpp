@@ -84,7 +84,12 @@ void CMyScrollView::ScrollToDevicePosition(POINT ptDev)
 	SetScrollPos(SB_HORZ, ptDev.x);
 	int yOrig = GetScrollPos(SB_VERT);
 	SetScrollPos(SB_VERT, ptDev.y);
-	ScrollWindow(xOrig - ptDev.x, yOrig - ptDev.y);
+
+	//ScrollWindow(xOrig - ptDev.x, yOrig - ptDev.y);
+
+	DoNoScrollUpdate(xOrig - ptDev.x, yOrig - ptDev.y);
+
+
 	m_curScrollPos = CPoint(ptDev);
 }
 
@@ -167,8 +172,9 @@ void CMyScrollView::ScrollToPosition(POINT pt)    // logical coordinates
 			m_pfn_UpdatePanningFeedback(GetSafeHwnd(), xOverPan, yOverPan, FALSE);
 		}
 
-	m_curScrollPos = pt;
 	ScrollToDevicePosition(pt);
+//	m_curScrollPos = pt;
+
 }
 
 BOOL CMyScrollView::OnScroll(UINT nScrollCode, UINT nPos, BOOL bDoScroll)
@@ -290,18 +296,24 @@ BOOL CMyScrollView::OnScrollBy(CSize sizeScroll, BOOL bDoScroll)
 		y = yMax;
 	}
 
-	m_curScrollPos = CPoint(x, y);
 
 	// did anything change?
 	if (x == xOrig && y == yOrig)
+	{
+		m_curScrollPos = CPoint(x, y);
 		return FALSE;
+	}
 
 
 	if (bDoScroll)
 	{
 
 		// do scroll and update scroll positions
-		ScrollWindow(-(x - xOrig), -(y - yOrig));
+		//ScrollWindow(-(x - xOrig), -(y - yOrig));
+
+		DoNoScrollUpdate(-(x - xOrig), -(y - yOrig));
+
+
 		if (x != xOrig)
 			SetScrollPos(SB_HORZ, x);
 		if (y != yOrig)
@@ -311,3 +323,52 @@ BOOL CMyScrollView::OnScrollBy(CSize sizeScroll, BOOL bDoScroll)
 	return TRUE;
 }
 
+
+void CMyScrollView::DoNoScrollUpdate(int dx, int dy)
+{
+	//return;
+	RECT r;
+	r.bottom = r.left = r.bottom = r.top = 0;
+
+	RECT rect;
+	GetClientRect(&rect);
+
+
+	r = rect;
+	if (dx < 0)
+	{
+		r.left = r.right + dx;
+	}
+	else
+	{
+		r.left = 0;
+		r.right = dx;
+	}
+	if (dx != 0)
+	{
+		//InvalidateRect(&r, 0);
+
+		DrawClientRect(r);
+		//TRACE(L"DoNoScrollUpdate: %d %d %d %d\n", r.left, r.top, r.right, r.bottom);
+	}
+
+	r = rect;
+	if (dy < 0)
+	{
+		r.top = r.bottom + dy;
+	}
+	else
+	{
+		r.top = 0;
+		r.bottom = dy;
+	}
+	if (dy != 0)
+	{
+		//InvalidateRect(&r, 0);
+		DrawClientRect(r);
+
+		//TRACE(L"DoNoScrollUpdate: %d %d %d %d\n", r.left, r.top, r.right, r.bottom);
+	}
+	//UpdateWindow();
+
+}

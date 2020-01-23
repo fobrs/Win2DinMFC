@@ -59,7 +59,42 @@ using namespace winrt::Microsoft::Graphics::Canvas::Text;
 ddraw_data_t g_ddraw_data;
 bool g_m_layoutdiagram_damp_scrolling = true;
 
+static void _RegisterWndClass(CString& name, UINT nClassStyle,
+	HCURSOR hCursor, HBRUSH hbrBackground, HICON hIcon)
+{
 
+	// generate a synthetic name for this class
+	HINSTANCE hInst = AfxGetInstanceHandle();
+
+	// see if the class already exists
+	WNDCLASS wndcls;
+	if (::GetClassInfo(hInst, (LPCTSTR)name, &wndcls))
+	{
+		// already registered, assert everything is good
+		ASSERT(wndcls.style == nClassStyle);
+
+		// NOTE: We have to trust that the hIcon, hbrBackground, and the
+		//  hCursor are semantically the same, because sometimes Windows does
+		//  some internal translation or copying of those handles before
+		//  storing them in the internal WNDCLASS retrieved by GetClassInfo.
+		return;
+	}
+
+	// otherwise we need to register a new class
+	wndcls.style = nClassStyle;
+	wndcls.lpfnWndProc = DefWindowProc;
+	wndcls.cbClsExtra = wndcls.cbWndExtra = 0;
+	wndcls.hInstance = hInst;
+	wndcls.hIcon = hIcon;
+	wndcls.hCursor = hCursor;
+	wndcls.hbrBackground = hbrBackground;
+	wndcls.lpszMenuName = NULL;
+	wndcls.lpszClassName = (LPCTSTR)name;
+	if (!AfxRegisterClass(&wndcls))
+		AfxThrowResourceException();
+
+	return;
+}
 
 std::wstring UTF8_to_wchar(const char * in)
 {
@@ -111,7 +146,7 @@ static int round_to_int(double v)
 }
 
 
-
+CString g_pViewClass;
 
 // CWin2DinMFCView
 
@@ -122,6 +157,7 @@ BEGIN_MESSAGE_MAP(CWin2DinMFCView, CMyScrollView)
 	ON_COMMAND(ID_FILE_PRINT, &CView::OnFilePrint)
 	ON_COMMAND(ID_FILE_PRINT_DIRECT, &CView::OnFilePrint)
 	ON_COMMAND(ID_FILE_PRINT_PREVIEW, &CWin2DinMFCView::OnFilePrintPreview)
+	ON_WM_PAINT()
 	ON_WM_CONTEXTMENU()
 	ON_WM_RBUTTONUP()
 	ON_WM_CREATE()
@@ -132,6 +168,7 @@ BEGIN_MESSAGE_MAP(CWin2DinMFCView, CMyScrollView)
 	ON_WM_MOUSEMOVE()
 	ON_WM_ERASEBKGND()
 	ON_MESSAGE(WM_GESTURE, OnGesture)
+	ON_MESSAGE(WM_MOUSELEAVE, OnMouseLeave)
 
 END_MESSAGE_MAP()
 
@@ -139,10 +176,18 @@ END_MESSAGE_MAP()
 
 CWin2DinMFCView::CWin2DinMFCView() noexcept
 {
+	m_update_rgn.CreateRectRgn(0, 0, 0, 0);
 	m_ppm_bitmap_resolution = SCALEPPI(72);
 	m_width = m_height = -1;
 	g_ddraw_data.Initialize();
 	m_dwFrequency = g_ddraw_data.GetFrequency();
+	//m_dwFrequency = 30;
+
+	if (g_pViewClass.GetLength() == 0)
+	{
+		g_pViewClass = L"DiagramClass";
+		_RegisterWndClass(g_pViewClass, CS_DBLCLKS, ::LoadCursor(NULL, IDC_ARROW), NULL, NULL);
+	}
 
 }
 
@@ -154,11 +199,132 @@ BOOL CWin2DinMFCView::PreCreateWindow(CREATESTRUCT& cs)
 {
 	// TODO: Modify the Window class or styles here by modifying
 	//  the CREATESTRUCT cs
+	cs.lpszClass = g_pViewClass;
+	cs.style |= WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
 
 	return CMyScrollView::PreCreateWindow(cs);
 }
 
+inline bool RectsOverlap(const CRect& r1, const CRect& r2)
+{
+	if (r1.left <= r2.right && r1.top <= r2.bottom && r1.right >= r2.left && r1.bottom >= r2.top)
+		return true;
+	else
+		return false;
+}
+
+inline int Area(CRect & r)
+{
+	return r.Width() * r.Height();
+}
+
+
+inline bool operator>(const CRect& lhs, const CRect& rhs)
+{
+	return RectsOverlap(lhs, rhs);
+}
+
+std::list<CRect> CWin2DinMFCView::GetUpdateRects(CRgn &rgn)
+{
+	typedef std::list < CRect > rect_list_t;
+	rect_list_t rects2;
+
+	LPRGNDATA lprgndata;
+	int size = rgn.GetRegionData(NULL, 0);
+	lprgndata = (LPRGNDATA)malloc(size);
+	if (lprgndata)
+	{
+		int r = rgn.GetRegionData(lprgndata, size);
+		if (lprgndata->rdh.nCount > 0)
+		{
+			CRect * rect = (CRect*)lprgndata->Buffer;
+			CRect drawrect;
+			//TRACE("start redraw: %d\n", lprgndata->rdh.nCount);
+			rect_list_t rects;
+			rect_list_t::iterator i, j;
+			bool empty = true;
+			unsigned int c;
+
+			for (c = 0; c < lprgndata->rdh.nCount; c++)
+			{
+				CRect r;
+				r = rect[c];
+				//r += GetScrollPosition();
+				rects.push_back(r);
+				TRACE(L"IN before sort redrawrect: %d: %d %d %d %d\n", c, r.left, r.top, r.right, r.bottom);
+			}
+			free(lprgndata);
+
+			// move all redraw rectangle from rects to rects2
+			// if a rectangle can be merged with an another one already present in rects2 do it.
+
+			// first one will be taken allways
+			i = rects.begin();
+			rects2.push_back(*i);
+			rects.pop_front();
+			j = rects2.begin();
+			// process until all rectangle from rects are used
+			CRect r;
+			while (!rects.empty())
+			{
+				bool found = false;
+				for (i = rects.begin(); i != rects.end(); ++i)
+				{
+					if (RectsOverlap((*j), (*i)))
+					{
+						r.UnionRect((*j), (*i));
+
+						if (Area(r) < (Area(*i) + Area(*j)) * 2)
+						{
+							// merge rectangles only when the resulting area 
+							// doesn't grow too big
+							TRACE("union rect: %d %d %d\n", Area(*j), Area(*i), Area(r));
+							found = true;
+							break;
+						}
+					}
+				}
+				if (found) {
+					// merge rectangles
+					(*j) = r;
+					rects.erase(i);
+				}
+				else {
+					// couldn't find a rectangle which overlaps with (*j)
+					// now take the next rectangle from rects and start again
+					// with this new rect in (*j)
+					i = rects.begin();
+					rects2.push_front(*i);
+					rects.pop_front();
+					j = rects2.begin();
+				}
+			}
+						TRACE("final redraw: %d\n", rects2.size());	
+			return rects2;
+#if 0
+			c = 0;
+			int o = 0;
+			for (i = rects2.begin(); i != rects2.end(); ++i, ++c)
+			{
+				CRect& r = (*i);
+				//				TRACE("IN after sort redrawrect: %d: %d %d %d %d\n", c, r.left, r.top, r.right, r.bottom);
+				Draw(pDC, &r);
+			}
+#endif
+		}
+	}
+	return rects2;
+
+}
+
 // CWin2DinMFCView drawing
+
+void CWin2DinMFCView::OnPaint()
+{
+	GetUpdateRgn(&m_update_rgn, FALSE);
+	CScrollView::OnPaint();
+}
+
 
 void CWin2DinMFCView::OnDraw(CDC* /*pDC*/)
 {
@@ -166,12 +332,14 @@ void CWin2DinMFCView::OnDraw(CDC* /*pDC*/)
 	ASSERT_VALID(pDoc);
 	if (!pDoc)
 		return;
+	auto rects = GetUpdateRects(m_update_rgn);
 
 	// TODO: add draw code for native data here
 
 	if (m_svg != nullptr)
 	{
-		Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, m_currentDpi);
+		for (auto rr = rects.begin(); rr != rects.end(); ++rr)
+			Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, m_currentDpi, &(*rr));
 	}
 
 }
@@ -252,7 +420,7 @@ DesktopWindowTarget CWin2DinMFCView::CreateDesktopWindowTarget(Compositor const&
 
 	auto interop = compositor.as<abi::ICompositorDesktopInterop>();
 	DesktopWindowTarget target{ nullptr };
-	check_hresult(interop->CreateDesktopWindowTarget(window, true, reinterpret_cast<abi::IDesktopWindowTarget**>(put_abi(target))));
+	winrt::check_hresult(interop->CreateDesktopWindowTarget(window, true, reinterpret_cast<abi::IDesktopWindowTarget**>(winrt::put_abi(target))));
 	return target;
 }
 
@@ -292,7 +460,7 @@ static float GetFontSize(float width)
 }
 
 
-bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi)
+bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi, CRect * clip_rect)
 {
 	auto pDoc = GetDocument();
 
@@ -370,15 +538,76 @@ bool CWin2DinMFCView::Redraw(float cx, float cy, float wx, float wy, float width
 		{
 			if (m_svg)
 			{
-				auto drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
+				auto m = m_transform;
+				CanvasDrawingSession drawingSession0 = nullptr;
+				if (!clip_rect)
+					drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface);
+				else
+				{
+					Rect r(clip_rect->left, clip_rect->top, clip_rect->right - clip_rect->left, clip_rect->bottom - clip_rect->top);
+					drawingSession0 = CanvasComposition::CreateDrawingSession(m_drawingSurface, r, m_currentDpi);
+
+					m.m31 -= clip_rect->left;
+					m.m32 -= clip_rect->top;
+				}
 				auto rc = drawingSession0.as< ICanvasResourceCreator>();
 
 				drawingSession0.Antialiasing(CanvasAntialiasing::Antialiased);
-				drawingSession0.Transform(m_transform);
+
+
+#if 1
+				com_ptr<ID2D1RenderTarget> pTarget{ nullptr };
+				//clip_rect = nullptr;
+				if (clip_rect)
+				{
+					com_ptr<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative> nativeDeviceWrapper = drawingSession0.as<ABI::Microsoft::Graphics::Canvas::ICanvasResourceWrapperNative>();
+					check_hresult(nativeDeviceWrapper->GetNativeResource(nullptr, 0.0f, guid_of<ID2D1RenderTarget>(), pTarget.put_void()));
+
+					D2D1_RECT_F clipRect;
+					clipRect.left = 0;
+					clipRect.right = clip_rect->right - clip_rect->left;
+					clipRect.top = 0;
+					clipRect.bottom = clip_rect->bottom - clip_rect->top;
+					pTarget->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_ALIASED);
+				}
+#endif
+				drawingSession0.Transform(m);
 
 				winrt::Windows::Foundation::Size size((float)m_width, (float)m_height);
 				drawingSession0.Clear(Colors::White());
 				drawingSession0.DrawSvg(m_svg, size);
+#if 1
+				if (clip_rect)
+				{
+					pTarget->PopAxisAlignedClip();
+				}
+
+#if 1
+
+				if (clip_rect)
+				{
+					m = m.identity();
+					drawingSession0.Transform(m);
+
+					Rect r(0, 0, clip_rect->right - clip_rect->left, clip_rect->bottom - clip_rect->top);
+					auto w = Colors::Red();
+					w.A = 80;
+					drawingSession0.DrawRectangle(r, w, 1.0f);
+				}
+				else
+				{
+					m = m.identity();
+					drawingSession0.Transform(m);
+
+					Rect r(0, 0, width, height);
+					auto w = Colors::Green();
+					w.A = 80;
+					drawingSession0.DrawRectangle(r, w, 1.0f);
+				}
+#endif
+
+#endif
+
 				drawingSession0.Close();
 			}
 		}
@@ -470,10 +699,9 @@ bool CWin2DinMFCView::LoadSvg()
 		SetScrollSizes(MM_TEXT, total);
 		
 		CPoint scroll_pos(0, 0);
-		ScrollToPosition(scroll_pos);
-
 		m_transform.m31 = 0;
 		m_transform.m32 = 0;
+		ScrollToPosition(scroll_pos);
 
 		m_transform.identity();
 	}
@@ -644,9 +872,9 @@ void CWin2DinMFCView::OnInitialUpdate()
 		CSize total(m_width, m_height);
 		SetScrollSizes(MM_TEXT, total);
 		CPoint scroll_pos(0, 0);
-		ScrollToPosition(scroll_pos);
 		m_transform.m31 = 0;
 		m_transform.m32 = 0;
+		ScrollToPosition(scroll_pos);
 
 	}
 	else
@@ -846,6 +1074,18 @@ void CALLBACK CWin2DinMFCView::TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent,
 		CPoint p, q;
 		q = p = pThis->GetScrollPosition();
 		p = p + pThis->m_scroll_diff;
+
+		if (p.x < 0)
+			p.x = 0;
+		if (p.y < 0)
+			p.y = 0;
+		int xMax = pThis->GetScrollLimit(SB_HORZ);
+		int yMax = pThis->GetScrollLimit(SB_VERT);
+		if (p.x > xMax)
+			p.x = xMax;
+		if (p.y > yMax)
+			p.y = yMax;
+
 		if (g_m_layoutdiagram_damp_scrolling)
 		{
 			float cx = (float)pThis->m_scroll_diff.cx;
@@ -871,12 +1111,18 @@ void CALLBACK CWin2DinMFCView::TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent,
 
 		g_ddraw_data.WaitForVSync();
 
-		pThis->ScrollToPosition(p);
+		pThis->SurfaceScroll(p);
 
 		pThis->m_transform.m31 = (float)-p.x;
 		pThis->m_transform.m32 = (float)-p.y;
 
-		pThis->UpdateWindow();
+		pThis->ScrollToPosition(p);
+
+
+
+
+
+		//pThis->UpdateWindow();
 		p = pThis->GetScrollPosition();
 
 
@@ -888,6 +1134,24 @@ void CALLBACK CWin2DinMFCView::TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent,
 	}
 }
 
+LRESULT CWin2DinMFCView::OnMouseLeave(WPARAM wParam, LPARAM lParam)
+{
+	if (m_bTranslateDragging)
+	{
+		ReleaseCapture();
+		m_bTranslateDragging = false;
+	}
+#if 0
+	m_fMouseInClient = FALSE;
+	if (m_hwFocus != (HWND)-1 && ::IsWindow(m_hwFocus)) {
+		if (!m_bInContextMenu) {
+			::SetFocus(m_hwFocus);
+			m_hwFocus = (HWND)-1;
+		}
+	}
+#endif
+	return 0;
+}
 
 
 
@@ -916,20 +1180,54 @@ void CWin2DinMFCView::OnMouseMove(UINT nFlags, CPoint point)
 		if (!bV)
 			p.y = 0;
 
+		int xMax = GetScrollLimit(SB_HORZ);
+		int yMax = GetScrollLimit(SB_VERT);
+		if (p.x > xMax)
+			p.x = xMax;
+		if (p.y > yMax)
+			p.y = yMax;
+
+
+
 		m_scroll_diff = p - p0;
 
 		if (m_scroll_diff != CSize(0, 0))
 		{
-			ScrollToPosition(p);
+
+			SurfaceScroll(p);
 
 			m_transform.m31 = (float)-p.x;
 			m_transform.m32 = (float)-p.y;
 
-			Invalidate();
+			ScrollToPosition(p);
+
+
+
+			//Invalidate();
 		}
 	}
 	//CMyScrollView::OnMouseMove(nFlags, point);
 }
+
+
+void CWin2DinMFCView::SurfaceScroll(CPoint & p)
+{
+	int dx, dy;
+
+	dx = p.x - (-m_transform.m31);
+	dy = p.y - (-m_transform.m32);
+
+	if ((dx != 0 || dy != 0) && m_drawingSurface != nullptr)
+	{
+		winrt::Windows::Graphics::PointInt32 r;
+		r.X = -dx;
+		r.Y = -dy;
+		m_drawingSurface.Scroll(r);
+		TRACE(L"Surface Scroll: %d %d\r\n", r.X, r.Y);
+	}
+}
+
+
 
 void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 {
@@ -990,21 +1288,53 @@ void CWin2DinMFCView::Zoom(int zDelta, CPoint pt)
 	if (total.cy <= (r.bottom - r.top))
 		p.y = 0;
 	//	p.x = p.y = 0;
+	if (p.x < 0)
+		p.x = 0;
+	if (p.y < 0)
+		p.y = 0;
+	int xMax = GetScrollLimit(SB_HORZ);
+	int yMax = GetScrollLimit(SB_VERT);
+	if (p.x > total.cx)
+		p.x = total.cx;
+	if (p.y > total.cy)
+		p.y = total.cy;
+
+
+
 	m_transform.m31 = (float)-p.x;
 	m_transform.m32 = (float)-p.y;
 	SetScrollSizes(MM_TEXT, total);
 	ScrollToPosition(p);
+
+
 	Invalidate();
 }
 
 BOOL CWin2DinMFCView::OnScrollBy(CSize sizeScroll, BOOL bDoScroll)
 {
+	
+	CPoint p(m_curScrollPos.x + sizeScroll.cx, m_curScrollPos.y+ sizeScroll.cy);
+
+	if (p.x < 0)
+		p.x = 0;
+	if (p.y < 0)
+		p.y = 0;
+	int xMax = GetScrollLimit(SB_HORZ);
+	int yMax = GetScrollLimit(SB_VERT);
+	if (p.x > xMax)
+		p.x = xMax;
+	if (p.y > yMax)
+		p.y = yMax;
+
+	SurfaceScroll(p);
+
+	m_transform.m31 = (float)-p.x;
+	m_transform.m32 = (float)-p.y;
+
 	auto r = CMyScrollView::OnScrollBy(sizeScroll, bDoScroll);
 
-	m_transform.m31 = (float)-m_curScrollPos.x;
-	m_transform.m32 = (float)-m_curScrollPos.y;
 
-	return r;
+	return false;
 }
 
 ULONG CWin2DinMFCView::GetGestureStatus(CPoint /*ptTouch*/)
@@ -1071,4 +1401,10 @@ LRESULT CWin2DinMFCView::OnGesture(WPARAM w, LPARAM lParam)
 	else {
 		return DefWindowProc(WM_GESTURE, w, lParam);
 	}
+}
+
+
+void CWin2DinMFCView::DrawClientRect(RECT & r)
+{
+	Redraw(m_width / 4.0f, m_height / 4.0f, 300, 300, (float)m_width, (float)m_height, m_currentDpi, (CRect*)&r);
 }

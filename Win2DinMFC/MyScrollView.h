@@ -26,6 +26,9 @@ public:
 
 	void ScrollToPosition(POINT pt);    // set upper left position
 	void SetScaleToFitSize(SIZE sizeTotal);
+	void CMyScrollView::DoNoScrollUpdate(int dx, int dy);
+
+	virtual void DrawClientRect(RECT & r) {};
 
 protected:
 	virtual void OnInitialUpdate();     // first time after construct

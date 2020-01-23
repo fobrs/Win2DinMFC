@@ -62,13 +62,17 @@ public:
 
 protected:
 	void OnDirect3DDeviceLost(DeviceLostHelper const* /* sender */, DeviceLostEventArgs const& /* args */);
-	DesktopWindowTarget CWin2DinMFCView::CreateDesktopWindowTarget(Compositor const& compositor, HWND window);
-	void CWin2DinMFCView::PrepareVisuals(Compositor const& compositor);
-
+	DesktopWindowTarget CreateDesktopWindowTarget(Compositor const& compositor, HWND window);
+	void PrepareVisuals(Compositor const& compositor);
+	void SurfaceScroll(CPoint & p);
 	void Zoom(int zDelta, CPoint pt);
 	static VOID CALLBACK TimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
 
-	bool Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi);
+	std::list<CRect> GetUpdateRects(CRgn &rgn);
+
+	virtual void DrawClientRect(RECT & r);
+
+	bool Redraw(float cx, float cy, float wx, float wy, float width, float height, UINT dpi, CRect * clip_rect = nullptr);
 	void Scenario_Wind2d(const Compositor & compositor, const ContainerVisual & root, UINT dpi, int cx, int cy);
 	bool LoadSvg();
 
@@ -76,6 +80,7 @@ protected:
 	Compositor m_compositor;
 	DesktopWindowTarget m_target{ nullptr };
 	SpriteVisual m_root{ nullptr };
+	CRgn m_update_rgn;
 
 	int m_currentDpi;
 	int m_width, m_height;
@@ -126,6 +131,7 @@ protected:
 
 // Generated message map functions
 protected:
+	afx_msg void OnPaint();
 	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
 	afx_msg void OnFilePrintPreview();
 	afx_msg void OnRButtonUp(UINT nFlags, CPoint point);
@@ -135,6 +141,7 @@ protected:
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnMouseMove(UINT nFlags, CPoint point);
+	afx_msg LRESULT OnMouseLeave(WPARAM wParam, LPARAM lParam);
 
 	DECLARE_MESSAGE_MAP()
 public:
